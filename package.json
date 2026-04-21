@@ -1,0 +1,29 @@
+{
+  "name": "silverlakes-landing",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2",
+    "bcryptjs": "^2.4.3",
+    "jose": "^5",
+    "next": "14.2.29",
+    "pdf-lib": "^1.17.1",
+    "react": "^18",
+    "react-dom": "^18",
+    "react-signature-canvas": "^1.0.6",
+    "resend": "^3"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "@types/react-signature-canvas": "^1.0.7",
+    "typescript": "^5"
+  }
+}

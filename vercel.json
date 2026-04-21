@@ -1,6 +1,4 @@
 {
-  "buildCommand": null,
-  "outputDirectory": ".",
-  "framework": null,
-  "alias": ["silverlakes.vercel.app"]
+  "framework": "nextjs",
+  "alias": ["silverlakes.vercel.app", "silverlakes-landing.vercel.app"]
 }
