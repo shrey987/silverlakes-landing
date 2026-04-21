@@ -25,6 +25,9 @@ export default function Home() {
             <span className="pill pill-outline">Asset-Specific SPV</span>
             <span className="pill pill-outline">8% Preferred Return</span>
           </div>
+          <div style={{ marginTop: '36px' }}>
+            <Link href="/access" className="cta-btn">Access Data Room</Link>
+          </div>
         </div>
         <div className="stats-bar fade" style={{ transitionDelay: '0.4s' }}>
           <div className="stat-item">

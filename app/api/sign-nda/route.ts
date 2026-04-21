@@ -112,18 +112,8 @@ export async function POST(req: NextRequest) {
     .update({ full_name, organization: organization || null })
     .eq('email', session.email);
 
-  // Send emails (fire and forget)
+  // Send investor copy (fire and forget)
   sendInvestorNdaCopy(session.email, full_name, pdfBuffer).catch(() => {});
-  sendAdminNotification({
-    full_name,
-    email: session.email,
-    organization: organization || '',
-    ip_address: ip,
-    ip_city: geo.city,
-    ip_region: geo.region,
-    ip_country: geo.country,
-    signed_at: signedAt,
-  }).catch(() => {});
 
   // Update session
   const newToken = await signSession({ ...session, signed: true });
