@@ -1,8 +1,11 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import SignatureCanvas from 'react-signature-canvas';
+
+const NdaPdfViewer = dynamic(() => import('./NdaPdfViewer'), { ssr: false });
 
 export default function SignNdaPage() {
   const [fullName, setFullName] = useState('');
@@ -13,15 +16,33 @@ export default function SignNdaPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [now, setNow] = useState('');
+  const [canvasWidth, setCanvasWidth] = useState(320);
+  const sigContainerRef = useRef<HTMLDivElement>(null);
   const sigCanvasRef = useRef<SignatureCanvas>(null);
   const router = useRouter();
 
   useEffect(() => {
-    const update = () => setNow(new Date().toLocaleString('en-US', { month: 'long', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' }));
+    const update = () => setNow(new Date().toLocaleString('en-US', {
+      month: 'long', day: 'numeric', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
+    }));
     update();
     const t = setInterval(update, 30000);
     return () => clearInterval(t);
   }, []);
+
+  useEffect(() => {
+    const obs = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const w = Math.floor(entry.contentRect.width) - 64;
+        setCanvasWidth(Math.max(180, Math.min(w, 480)));
+      }
+    });
+    if (sigContainerRef.current) obs.observe(sigContainerRef.current);
+    return () => obs.disconnect();
+  }, []);
+
+  const handlePdfWidth = useCallback(() => {}, []);
 
   const hasSignature = sigMethod === 'drawn'
     ? (sigCanvasRef.current && !sigCanvasRef.current.isEmpty())
@@ -39,7 +60,6 @@ export default function SignNdaPage() {
     if (sigMethod === 'drawn') {
       signature_data = sigCanvasRef.current!.toDataURL('image/png');
     } else {
-      // Render typed signature to canvas
       const canvas = document.createElement('canvas');
       canvas.width = 400; canvas.height = 80;
       const ctx = canvas.getContext('2d')!;
@@ -63,83 +83,402 @@ export default function SignNdaPage() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#060C1A', padding: '40px 24px' }}>
-      <div style={{ maxWidth: '1100px', margin: '0 auto' }}>
-        <div style={{ textAlign: 'center', marginBottom: '40px' }}>
-          <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '13px', color: 'rgba(255,255,255,0.4)', letterSpacing: '0.1em', marginBottom: '10px' }}>THREE LIONS CAPITAL</div>
-          <h1 style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: '32px', fontWeight: 400, color: '#fff' }}>Confidentiality Agreement</h1>
-          <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.4)', marginTop: '8px' }}>Review and sign the NDA below to access the Silver Lakes data room.</p>
+    <>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300&family=Inter:wght@300;400;500;600&display=swap');
+        *, *::before, *::after { box-sizing: border-box; }
+
+        body { margin: 0; }
+
+        .nda-wrap {
+          min-height: 100vh;
+          background: #060C1A;
+          font-family: 'Inter', sans-serif;
+        }
+
+        .nda-header {
+          text-align: center;
+          padding: 52px 24px 40px;
+          border-bottom: 1px solid rgba(255,255,255,0.06);
+        }
+
+        .nda-eyebrow {
+          font-family: 'Cormorant Garamond', serif;
+          font-size: 11px;
+          letter-spacing: 0.2em;
+          text-transform: uppercase;
+          color: rgba(255,255,255,0.3);
+          margin: 0 0 14px;
+        }
+
+        .nda-title {
+          font-family: 'Cormorant Garamond', serif;
+          font-size: 40px;
+          font-weight: 400;
+          color: #fff;
+          margin: 0 0 12px;
+          line-height: 1.15;
+        }
+
+        .nda-subtitle {
+          font-size: 13px;
+          color: rgba(255,255,255,0.3);
+          margin: 0;
+          line-height: 1.6;
+        }
+
+        .nda-body {
+          display: grid;
+          grid-template-columns: 1fr 400px;
+          max-width: 1180px;
+          margin: 0 auto;
+          padding: 44px 36px;
+          gap: 48px;
+          align-items: start;
+        }
+
+        .pdf-col {}
+
+        .pdf-label {
+          font-size: 10px;
+          font-weight: 600;
+          letter-spacing: 0.15em;
+          text-transform: uppercase;
+          color: rgba(255,255,255,0.25);
+          margin-bottom: 14px;
+        }
+
+        .pdf-container {
+          background: #111;
+          border: 1px solid rgba(255,255,255,0.07);
+          border-radius: 6px;
+          overflow-y: auto;
+          max-height: calc(100vh - 240px);
+          min-height: 480px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 2px;
+          padding: 16px;
+          scrollbar-width: thin;
+          scrollbar-color: rgba(255,255,255,0.12) transparent;
+        }
+
+        .pdf-container::-webkit-scrollbar { width: 4px; }
+        .pdf-container::-webkit-scrollbar-track { background: transparent; }
+        .pdf-container::-webkit-scrollbar-thumb {
+          background: rgba(255,255,255,0.12);
+          border-radius: 4px;
+        }
+
+        .pdf-page-wrap {
+          box-shadow: 0 4px 24px rgba(0,0,0,0.6);
+          border-radius: 2px;
+          overflow: hidden;
+          line-height: 0;
+        }
+
+        .form-col {
+          position: sticky;
+          top: 32px;
+        }
+
+        .form-card {
+          background: rgba(255,255,255,0.025);
+          border: 1px solid rgba(255,255,255,0.08);
+          border-radius: 6px;
+          padding: 36px 28px;
+        }
+
+        .field-label {
+          display: block;
+          font-size: 10px;
+          font-weight: 600;
+          letter-spacing: 0.15em;
+          text-transform: uppercase;
+          color: rgba(255,255,255,0.38);
+          margin-bottom: 8px;
+        }
+
+        .field-input {
+          width: 100%;
+          padding: 11px 14px;
+          background: rgba(255,255,255,0.04);
+          border: 1px solid rgba(255,255,255,0.09);
+          border-radius: 4px;
+          color: #fff;
+          font-size: 14px;
+          font-family: 'Inter', sans-serif;
+          outline: none;
+          transition: border-color 0.2s;
+          -webkit-appearance: none;
+        }
+
+        .field-input:focus {
+          border-color: rgba(196,154,60,0.45);
+          background: rgba(255,255,255,0.06);
+        }
+
+        .field-input::placeholder { color: rgba(255,255,255,0.18); }
+
+        .field-group { margin-bottom: 20px; }
+
+        .sig-toggle {
+          display: flex;
+          gap: 8px;
+          margin-bottom: 12px;
+        }
+
+        .sig-tab {
+          flex: 1;
+          padding: 9px 0;
+          font-size: 10px;
+          font-weight: 700;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+          border-radius: 4px;
+          cursor: pointer;
+          transition: all 0.18s;
+          font-family: 'Inter', sans-serif;
+        }
+
+        .sig-tab.active {
+          background: rgba(196,154,60,0.12);
+          border: 1px solid rgba(196,154,60,0.55);
+          color: #C49A3C;
+        }
+
+        .sig-tab.inactive {
+          border: 1px solid rgba(255,255,255,0.08);
+          color: rgba(255,255,255,0.3);
+          background: transparent;
+        }
+
+        .sig-canvas-wrap {
+          background: #fff;
+          border-radius: 4px;
+          position: relative;
+          overflow: hidden;
+          width: 100%;
+        }
+
+        .sig-canvas-wrap canvas {
+          display: block;
+          width: 100% !important;
+          height: 110px !important;
+        }
+
+        .sig-clear {
+          position: absolute;
+          top: 8px;
+          right: 10px;
+          font-size: 10px;
+          background: none;
+          border: none;
+          color: #bbb;
+          cursor: pointer;
+          font-family: 'Inter', sans-serif;
+          padding: 0;
+          letter-spacing: 0;
+        }
+
+        .timestamp-box {
+          font-size: 11px;
+          color: rgba(255,255,255,0.28);
+          padding: 10px 12px;
+          border: 1px solid rgba(255,255,255,0.06);
+          border-radius: 4px;
+          background: rgba(255,255,255,0.02);
+          margin-bottom: 20px;
+        }
+
+        .agree-label {
+          display: flex;
+          gap: 10px;
+          align-items: flex-start;
+          cursor: pointer;
+          margin-bottom: 24px;
+        }
+
+        .agree-label input[type=checkbox] {
+          margin-top: 2px;
+          accent-color: #C49A3C;
+          flex-shrink: 0;
+          width: 15px;
+          height: 15px;
+          cursor: pointer;
+        }
+
+        .agree-text {
+          font-size: 12px;
+          color: rgba(255,255,255,0.4);
+          line-height: 1.65;
+        }
+
+        .submit-btn {
+          width: 100%;
+          padding: 15px;
+          font-size: 11px;
+          font-weight: 700;
+          letter-spacing: 0.2em;
+          text-transform: uppercase;
+          border: none;
+          border-radius: 4px;
+          transition: all 0.2s;
+          font-family: 'Inter', sans-serif;
+        }
+
+        .submit-btn.active {
+          background: #C49A3C;
+          color: #060C1A;
+          cursor: pointer;
+        }
+
+        .submit-btn.active:hover {
+          background: #d4a93f;
+        }
+
+        .submit-btn.disabled {
+          background: rgba(196,154,60,0.15);
+          color: rgba(255,255,255,0.18);
+          cursor: not-allowed;
+        }
+
+        .error-msg {
+          color: #f87171;
+          font-size: 13px;
+          margin-bottom: 16px;
+        }
+
+        /* Tablet */
+        @media (max-width: 900px) {
+          .nda-body {
+            grid-template-columns: 1fr;
+            padding: 28px 20px;
+            gap: 28px;
+          }
+
+          .form-col {
+            position: static;
+          }
+
+          .nda-title { font-size: 30px; }
+        }
+
+        /* Mobile */
+        @media (max-width: 480px) {
+          .nda-header { padding: 32px 16px 28px; }
+          .nda-title { font-size: 26px; }
+          .nda-subtitle { font-size: 12px; }
+          .nda-body { padding: 20px 14px; gap: 20px; }
+          .form-card { padding: 22px 18px; }
+          .pdf-container { max-height: 360px; min-height: 260px; padding: 8px; }
+        }
+      `}</style>
+
+      <div className="nda-wrap">
+        <div className="nda-header">
+          <p className="nda-eyebrow">Three Lions Capital</p>
+          <h1 className="nda-title">Confidentiality Agreement</h1>
+          <p className="nda-subtitle">Review and sign the NDA below to access the Silver Lakes data room.</p>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 400px', gap: '32px', alignItems: 'start' }}>
-          {/* NDA PDF viewer */}
-          <div style={{ border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(13,25,41,0.5)' }}>
-            <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(255,255,255,0.08)', fontSize: '11px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.4)' }}>
-              Confidentiality and Use Agreement &mdash; NDA Version 4.17
-            </div>
-            <iframe
-              src="/nda.pdf"
-              style={{ width: '100%', height: '700px', border: 'none', display: 'block' }}
-              title="NDA Document"
-            />
+        <div className="nda-body">
+          {/* PDF viewer */}
+          <div className="pdf-col">
+            <div className="pdf-label">Confidentiality and Use Agreement — NDA Version 4.17</div>
+            <NdaPdfViewer onWidthChange={handlePdfWidth} />
           </div>
 
-          {/* Signature panel */}
-          <div style={{ position: 'sticky', top: '24px' }}>
-            <div style={{ background: 'rgba(13,25,41,0.9)', border: '1px solid rgba(255,255,255,0.08)', padding: '32px' }}>
+          {/* Signature form */}
+          <div className="form-col" ref={sigContainerRef}>
+            <div className="form-card">
               <form onSubmit={submit}>
-                <div style={{ marginBottom: '20px' }}>
-                  <label style={labelSt}>Full Legal Name *</label>
-                  <input value={fullName} onChange={e => setFullName(e.target.value)} required placeholder="First Last" style={inputSt} />
-                </div>
-                <div style={{ marginBottom: '24px' }}>
-                  <label style={labelSt}>Organization / Entity</label>
-                  <input value={organization} onChange={e => setOrganization(e.target.value)} placeholder="Company name" style={inputSt} />
+                <div className="field-group">
+                  <label className="field-label">Full Legal Name *</label>
+                  <input
+                    value={fullName}
+                    onChange={e => setFullName(e.target.value)}
+                    required
+                    placeholder="First Last"
+                    className="field-input"
+                  />
                 </div>
 
-                <div style={{ marginBottom: '20px' }}>
-                  <label style={labelSt}>Signature *</label>
-                  <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+                <div className="field-group">
+                  <label className="field-label">Organization / Entity</label>
+                  <input
+                    value={organization}
+                    onChange={e => setOrganization(e.target.value)}
+                    placeholder="Company name"
+                    className="field-input"
+                  />
+                </div>
+
+                <div className="field-group">
+                  <label className="field-label">Signature *</label>
+                  <div className="sig-toggle">
                     {(['drawn', 'typed'] as const).map(m => (
-                      <button key={m} type="button" onClick={() => setSigMethod(m)} style={{ flex: 1, padding: '8px', fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', background: sigMethod === m ? 'rgba(196,154,60,0.2)' : 'transparent', border: `1px solid ${sigMethod === m ? '#C49A3C' : 'rgba(255,255,255,0.12)'}`, color: sigMethod === m ? '#C49A3C' : 'rgba(255,255,255,0.4)', cursor: 'pointer' }}>
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setSigMethod(m)}
+                        className={`sig-tab ${sigMethod === m ? 'active' : 'inactive'}`}
+                      >
                         {m === 'drawn' ? 'Draw' : 'Type'}
                       </button>
                     ))}
                   </div>
 
                   {sigMethod === 'drawn' ? (
-                    <div style={{ background: '#fff', borderRadius: '2px', position: 'relative' }}>
+                    <div className="sig-canvas-wrap">
                       <SignatureCanvas
                         ref={sigCanvasRef}
                         penColor="#000"
-                        canvasProps={{ width: 336, height: 120, style: { display: 'block' } }}
+                        canvasProps={{
+                          width: canvasWidth,
+                          height: 110,
+                        }}
                       />
-                      <button type="button" onClick={() => sigCanvasRef.current?.clear()} style={{ position: 'absolute', top: '6px', right: '8px', fontSize: '10px', background: 'none', border: 'none', color: '#999', cursor: 'pointer' }}>Clear</button>
+                      <button
+                        type="button"
+                        onClick={() => sigCanvasRef.current?.clear()}
+                        className="sig-clear"
+                      >
+                        Clear
+                      </button>
                     </div>
                   ) : (
                     <input
                       value={typedSig}
                       onChange={e => setTypedSig(e.target.value)}
                       placeholder="Type your name"
-                      style={{ ...inputSt, fontStyle: 'italic', fontFamily: 'Georgia, serif', fontSize: '18px' }}
+                      className="field-input"
+                      style={{ fontStyle: 'italic', fontFamily: 'Georgia, serif', fontSize: '18px' }}
                     />
                   )}
                 </div>
 
-                <div style={{ marginBottom: '20px', fontSize: '11px', color: 'rgba(255,255,255,0.35)', padding: '10px 12px', border: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.02)' }}>
-                  Signing on {now}
-                </div>
+                <div className="timestamp-box">Signing on {now}</div>
 
-                <label style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', cursor: 'pointer', marginBottom: '24px' }}>
-                  <input type="checkbox" checked={agreed} onChange={e => setAgreed(e.target.checked)} style={{ marginTop: '2px', accentColor: '#C49A3C' }} />
-                  <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', lineHeight: 1.6 }}>
+                <label className="agree-label">
+                  <input
+                    type="checkbox"
+                    checked={agreed}
+                    onChange={e => setAgreed(e.target.checked)}
+                  />
+                  <span className="agree-text">
                     I have read and agree to the above Confidentiality and Use Agreement.
                   </span>
                 </label>
 
-                {error && <div style={{ color: '#f87171', fontSize: '13px', marginBottom: '16px' }}>{error}</div>}
+                {error && <div className="error-msg">{error}</div>}
 
-                <button type="submit" disabled={!canSubmit || loading} style={{ width: '100%', padding: '16px', background: canSubmit ? '#C49A3C' : 'rgba(196,154,60,0.3)', color: canSubmit ? '#060C1A' : 'rgba(255,255,255,0.3)', fontSize: '12px', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', border: 'none', cursor: canSubmit ? 'pointer' : 'not-allowed' }}>
+                <button
+                  type="submit"
+                  disabled={!canSubmit || loading}
+                  className={`submit-btn ${canSubmit && !loading ? 'active' : 'disabled'}`}
+                >
                   {loading ? 'Processing...' : 'Sign & Access Data Room'}
                 </button>
               </form>
@@ -147,9 +486,6 @@ export default function SignNdaPage() {
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
-
-const labelSt: React.CSSProperties = { display: 'block', fontSize: '10px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.45)', marginBottom: '8px' };
-const inputSt: React.CSSProperties = { width: '100%', padding: '12px 14px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', fontSize: '14px', fontFamily: "'Inter', sans-serif", outline: 'none' };
